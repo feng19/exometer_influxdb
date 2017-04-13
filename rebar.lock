@@ -1,0 +1,32 @@
+{"1.1.0",
+[{<<"bear">>,{pkg,<<"bear">>,<<"0.8.3">>},2},
+ {<<"certifi">>,{pkg,<<"certifi">>,<<"0.7.0">>},1},
+ {<<"edown">>,{pkg,<<"edown">>,<<"0.8.1">>},1},
+ {<<"exometer_core">>,{pkg,<<"exometer_core">>,<<"1.4.0">>},0},
+ {<<"folsom">>,{pkg,<<"folsom">>,<<"0.8.3">>},1},
+ {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},2},
+ {<<"hackney">>,{pkg,<<"hackney">>,<<"1.6.3">>},0},
+ {<<"idna">>,{pkg,<<"idna">>,<<"1.2.0">>},1},
+ {<<"lager">>,{pkg,<<"lager">>,<<"3.4.1">>},1},
+ {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},1},
+ {<<"mimerl">>,{pkg,<<"mimerl">>,<<"1.0.2">>},1},
+ {<<"parse_trans">>,{pkg,<<"parse_trans">>,<<"2.9.0">>},1},
+ {<<"setup">>,{pkg,<<"setup">>,<<"1.7.0">>},1},
+ {<<"ssl_verify_fun">>,{pkg,<<"ssl_verify_fun">>,<<"1.1.1">>},1}]}.
+[
+{pkg_hash,[
+ {<<"bear">>, <<"866002127A97932720A0D475D8582C98EC5FB78DB3A18DFE7EAF91594D9024B8">>},
+ {<<"certifi">>, <<"861A57F3808F7EB0C2D1802AFEAAE0FA5DE813B0DF0979153CBAFCD853ABABAF">>},
+ {<<"edown">>, <<"7333B6F6B7BBC736C263E9CEB8261667D7C8F7D92E251829F1A9FE8F24E7B694">>},
+ {<<"exometer_core">>, <<"A546CCD38BE910DE6EA75EA95B724B6B2DB513C26F02E30919B25EB19651815A">>},
+ {<<"folsom">>, <<"71CFF146152FA95E6092E62119F9DC96888660111E7B61853C8FDCF80598A4E0">>},
+ {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>},
+ {<<"hackney">>, <<"D489D7CA2D4323E307BEDC4BFE684323A7BF773ECFD77938F3EE8074E488E140">>},
+ {<<"idna">>, <<"AC62EE99DA068F43C50DC69ACF700E03A62A348360126260E87F2B54ECED86B2">>},
+ {<<"lager">>, <<"F87D6B3378D15DFC27DE578EB6B5BCA41685B26C47189457F107321C5AE843FC">>},
+ {<<"metrics">>, <<"25F094DEA2CDA98213CECC3AEFF09E940299D950904393B2A29D191C346A8486">>},
+ {<<"mimerl">>, <<"993F9B0E084083405ED8252B99460C4F0563E41729AB42D9074FD5E52439BE88">>},
+ {<<"parse_trans">>, <<"3F5F7B402928FB9FD200C891E635DE909045D1EFAC40CE3F924D3892898F85EB">>},
+ {<<"setup">>, <<"15DF8E57C6DF9755E22BFB1AEF0C640BD97E9889396FDFB2A85A5536A9043674">>},
+ {<<"ssl_verify_fun">>, <<"28A4D65B7F59893BC2C7DE786DEC1E1555BD742D336043FE644AE956C3497FBE">>}]}
+].

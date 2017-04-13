@@ -2,3 +2,6 @@ deps
 ebin
 .rebar
 log
+*.iml
+.idea
+_build
