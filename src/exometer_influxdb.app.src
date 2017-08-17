@@ -1,13 +1,12 @@
-{application, exometer_influxdb,
- [
-  {description, "InfluxDB reporrter for exometer"},
-  {vsn, git},
-  {registered, []},
-  {applications, [
-                  kernel,
-                  stdlib,
-                  hackney,
-                  exometer_core
-                 ]},
-  {env, []}
- ]}.
+{application, exometer_influxdb, [
+    {description, "InfluxDB reporrter for exometer"},
+    {vsn, "0.5.6"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib,
+        hackney,
+        exometer_core
+    ]},
+    {env, []}
+]}.

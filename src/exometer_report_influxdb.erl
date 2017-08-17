@@ -16,6 +16,14 @@
     exometer_terminate/2
 ]).
 
+-compile({inline, [
+    prepare_batch_send/1, prepare_reconnect/0,
+    merge_tags/2,
+    convert_time_unit/2, unix_time/1,
+    metric_elem_to_list/1, name/1, key/1, value/1,
+    flatten_fields/1, flatten_tags/1, make_packet/5
+]}).
+-compile(inline_list_funcs).
 
 -ifdef(TEST).
 -export([
@@ -43,6 +51,18 @@
 -define(VALID_PRECISIONS, [n, u, ms, s, m, h]).
 
 -define(HTTP(Proto), (Proto =:= http orelse Proto =:= https)).
+
+-ifdef(TEST).
+-define(UNIX_TIME, 1456993525).
+-define(MILLI_UNIX_TIME, 1456993524527).
+-define(MICRO_UNIX_TIME, 1456993524527361).
+-define(NANO_UNIX_TIME, 1456993524527361000).
+-else.
+-define(UNIX_TIME, erlang:system_time(second)).
+-define(MILLI_UNIX_TIME, erlang:system_time(millisecond)).
+-define(MICRO_UNIX_TIME, erlang:system_time(microsecond)).
+-define(NANO_UNIX_TIME, erlang:system_time(nanosecond)).
+-endif.
 
 -include("log.hrl").
 
@@ -348,35 +368,20 @@ get_opt(K, Opts, Default) ->
 %% LINE PROTOCOL
 -define(SEP(V), case V of <<>> -> <<>>; [] -> <<>>; _ -> <<$,>> end).
 
--spec microsecs() -> integer().
--ifdef(TEST).
-microsecs() -> 1456993524527361.
--else.
-microsecs() ->
-    {MegaSecs, Secs, MicroSecs} = os:timestamp(),
-    MegaSecs * 1000000 * 1000000 + Secs * 1000000 + MicroSecs.
--endif.
-
 -spec convert_time_unit(integer(), erlang:time_unit() | minutes | hours) ->
     integer().
-convert_time_unit(MicroSecs, hours) ->
-    round(convert_time_unit(MicroSecs, minutes) / 60);
-convert_time_unit(MicroSecs, minutes) ->
-    round(convert_time_unit(MicroSecs, seconds) / 60);
-convert_time_unit(MicroSecs, seconds) ->
-    round(convert_time_unit(MicroSecs, milli_seconds) / 1000);
-convert_time_unit(MicroSecs, milli_seconds) ->
-    round(MicroSecs / 1000);
-convert_time_unit(MicroSecs, nano_seconds) ->
-    MicroSecs * 1000.
+convert_time_unit(Secs, hours) ->
+    round(convert_time_unit(Secs, minutes) / 60);
+convert_time_unit(Secs, minutes) ->
+    round(Secs / 60).
 
 -spec unix_time(precision() | undefined) -> integer() | undefined.
-unix_time(n) -> convert_time_unit(microsecs(), nano_seconds);
-unix_time(u) -> microsecs();
-unix_time(ms) -> convert_time_unit(microsecs(), milli_seconds);
-unix_time(s) -> convert_time_unit(microsecs(), seconds);
-unix_time(m) -> convert_time_unit(microsecs(), minutes);
-unix_time(h) -> convert_time_unit(microsecs(), hours);
+unix_time(n) -> ?NANO_UNIX_TIME;
+unix_time(u) -> ?MICRO_UNIX_TIME;
+unix_time(ms) -> ?MILLI_UNIX_TIME;
+unix_time(s) -> ?UNIX_TIME;
+unix_time(m) -> convert_time_unit(?UNIX_TIME, minutes);
+unix_time(h) -> convert_time_unit(?UNIX_TIME, hours);
 unix_time(_) -> undefined.
 
 -spec metric_to_string(list()) -> string().
@@ -394,21 +399,20 @@ metric_elem_to_list(E) when is_integer(E) -> integer_to_list(E).
 name(Metric) when is_atom(Metric) -> atom_to_binary(Metric, utf8);
 name(Metric) -> iolist_to_binary(metric_to_string(Metric)).
 
+-define(KEY(Key), binary:replace(Key, [<<" ">>, <<$,>>, <<$=>>], <<$\\>>, [global, {insert_replaced, 1}])).
 -spec key(integer() | atom() | list() | binary()) -> binary().
-key(K) when is_integer(K) -> key(integer_to_binary(K));
-key(K) when is_list(K) -> key(list_to_binary(K));
-key(K) when is_atom(K) -> key(atom_to_binary(K, utf8));
-key(K) ->
-    binary:replace(K, [<<" ">>, <<$,>>, <<$=>>], <<$\\>>,
-        [global, {insert_replaced, 1}]).
+key(K) when is_integer(K) -> ?KEY(integer_to_binary(K));
+key(K) when is_list(K) -> ?KEY(list_to_binary(K));
+key(K) when is_atom(K) -> ?KEY(atom_to_binary(K, utf8));
+key(K) when is_binary(K) -> ?KEY(K).
 
+-define(VALUE(Value), [$", binary:replace(Value, <<$">>, <<$\\, $">>, [global]), $"]).
 -spec value(any()) -> binary() | list().
 value(V) when is_integer(V) -> [integer_to_binary(V), $i];
 value(V) when is_float(V) -> float_to_binary(V);
-value(V) when is_atom(V) -> value(atom_to_binary(V, utf8));
-value(V) when is_list(V) -> value(list_to_binary(V));
-value(V) when is_binary(V) ->
-    [$", binary:replace(V, <<$">>, <<$\\, $">>, [global]), $"].
+value(V) when is_atom(V) -> ?VALUE(atom_to_binary(V, utf8));
+value(V) when is_list(V) -> ?VALUE(list_to_binary(V));
+value(V) when is_binary(V) -> ?VALUE(V).
 
 -spec flatten_fields(map()) -> list().
 flatten_fields(Fields) ->
