@@ -21,14 +21,16 @@
     merge_tags/2,
     convert_time_unit/2, unix_time/1,
     metric_elem_to_list/1, name/1, key/1, value/1,
-    flatten_fields/1, flatten_tags/1, make_packet/5
+    flatten_fields/1, flatten_tags/1,
+    make_packet/4, metric_tags_binary/2
 ]}).
 -compile(inline_list_funcs).
 
 -ifdef(TEST).
 -export([
     evaluate_subscription_options/5,
-    make_packet/5
+    make_packet/4,
+    metric_tags_binary/2
 ]).
 -endif.
 
@@ -72,7 +74,9 @@
 -type precision() :: n | u | ms | s | m | h.
 -type protocol() :: http | udp.
 
--record(state, {protocol :: protocol(),
+-record(state, {
+    protocol :: protocol(),
+    http_url :: binary(),
     db :: binary(), % for http
     username :: undefined | binary(), % for http
     password :: undefined | binary(), % for http
@@ -113,8 +117,10 @@ exometer_init(Opts) ->
     Autosubscribe = get_opt(autosubscribe, Opts, ?DEFAULT_AUTOSUBSCRIBE),
     SubscriptionsMod = get_opt(subscriptions_module, Opts, ?DEFAULT_SUBSCRIPTIONS_MOD),
     MergedTags = merge_tags([{<<"host">>, net_adm:localhost()}], Tags),
+    Url = http_url(Protocol, DB, Timestamping, Precision),
     State = #state{
         protocol = Protocol,
+        http_url = Url,
         db = DB,
         username = Username,
         password = Password,
@@ -128,7 +134,8 @@ exometer_init(Opts) ->
         batch_window_size = BatchWinSize,
         autosubscribe = Autosubscribe,
         subscriptions_module = SubscriptionsMod,
-        metrics = maps:new()},
+        metrics = maps:new()
+    },
     code:load_file(hackney_tcp),
     code:load_file(hackney_ssl),
     case connect(Protocol, Host, Port, Username, Password) of
@@ -141,31 +148,24 @@ exometer_init(Opts) ->
             {ok, State}
     end.
 
--spec exometer_report(exometer_report:metric(),
-    exometer_report:datapoint(),
-    exometer_report:extra(),
-    value(),
-    state()) -> callback_result().
+-spec exometer_report(exometer_report:metric(), exometer_report:datapoint(),
+    exometer_report:extra(), value(), state()) -> callback_result().
 exometer_report(_Metric, _DataPoint, _Extra, _Value,
     #state{connection = undefined} = State) ->
     ?info("InfluxDB reporter isn't connected and will reconnect."),
     {ok, State};
 exometer_report(Metric, DataPoint, _Extra, Value, #state{metrics = Metrics} = State) ->
     case maps:get(Metric, Metrics, not_found) of
-        {MetricName, Tags} ->
-            maybe_send(Metric, MetricName, Tags,
-                maps:from_list([{DataPoint, Value}]), State);
+        MetricTagsBinary when is_binary(MetricTagsBinary) ->
+            maybe_send(MetricTagsBinary, maps:from_list([{DataPoint, Value}]), State);
         Error ->
             ?warning("InfluxDB reporter got trouble when looking ~p metric's tag: ~p",
                 [Metric, Error]),
             Error
     end.
 
--spec exometer_subscribe(exometer_report:metric(),
-    exometer_report:datapoint(),
-    exometer_report:interval(),
-    exometer_report:extra(),
-    state()) -> callback_result().
+-spec exometer_subscribe(exometer_report:metric(), exometer_report:datapoint(),
+    exometer_report:interval(), exometer_report:extra(), state()) -> callback_result().
 exometer_subscribe(Metric, _DataPoint, _Interval, SubscribeOpts,
     #state{metrics = Metrics, tags = DefaultTags,
         series_name = DefaultSeriesName,
@@ -175,14 +175,13 @@ exometer_subscribe(Metric, _DataPoint, _Interval, SubscribeOpts,
         {[], _} ->
             exit({invalid_metric_name, []});
         {MetricName, Tags} ->
-            NewMetrics = maps:put(Metric, {MetricName, Tags}, Metrics),
+            MetricTagsBinary = metric_tags_binary(MetricName, Tags),
+            NewMetrics = maps:put(Metric, MetricTagsBinary, Metrics),
             {ok, State#state{metrics = NewMetrics}}
     end.
 
--spec exometer_unsubscribe(exometer_report:metric(),
-    exometer_report:datapoint(),
-    exometer_report:extra(),
-    state()) -> callback_result().
+-spec exometer_unsubscribe(exometer_report:metric(), exometer_report:datapoint(),
+    exometer_report:extra(), state()) -> callback_result().
 exometer_unsubscribe(Metric, _DataPoint, _Extra, #state{metrics = Metrics} = State) ->
     {ok, State#state{metrics = maps:remove(Metric, Metrics)}}.
 
@@ -196,15 +195,15 @@ exometer_cast(_Unknown, State) ->
     {ok, State}.
 
 -spec exometer_info(any(), state()) -> callback_result().
-exometer_info({exometer_influxdb, reconnect}, State) ->
-    reconnect(State);
 exometer_info({exometer_influxdb, send}, #state{collected_metrics = []} = State) ->
     {ok, State};
 exometer_info({exometer_influxdb, send}, #state{precision = Precision,
     collected_metrics = CollectedMetrics} = State) ->
-    Packets = [[make_packet(MetricName, Tags, Fileds, Timestamping, Precision), "\n"]
-        || {MetricName, Tags, Fileds, Timestamping} <- CollectedMetrics],
+    Packets = [[make_packet(MetricTagsBinary, Fileds, Timestamping, Precision), "\n"]
+        || {MetricTagsBinary, Fileds, Timestamping} <- CollectedMetrics],
     send(Packets, State#state{collected_count = 0, collected_metrics = []});
+exometer_info({exometer_influxdb, reconnect}, State) ->
+    reconnect(State);
 exometer_info(_Unknown, State) ->
     {ok, State}.
 
@@ -286,37 +285,26 @@ prepare_batch_send(Time) ->
 prepare_reconnect() ->
     erlang:send_after(1000, self(), {exometer_influxdb, reconnect}).
 
--spec maybe_send(list(), list(), map(), map(), state()) ->
+-spec maybe_send(binary(), map(), state()) ->
     {ok, state()} | {error, term()}.
-maybe_send(_, MetricName, Tags, Fields,
+maybe_send(MetricTagsBinary, Fields,
     #state{batch_window_size = 0, timestamping = Timestamping, precision = Precision} = State) ->
-    Packet = make_packet(MetricName, Tags, Fields, Timestamping, Precision),
+    Packet = make_packet(MetricTagsBinary, Fields, Timestamping, Precision),
     send(Packet, State);
-maybe_send(_OriginMetricName, MetricName, Tags0, Fields,
+maybe_send(MetricTagsBinary, Fields,
     #state{batch_window_size = BatchWinSize,
         precision = Precision,
         timestamping = Timestamping,
         collected_count = CollectedCount,
         collected_metrics = CollectedMetrics} = State) ->
-    NewCollectedMetrics = [{MetricName, Tags0, Fields, Timestamping andalso unix_time(Precision)} | CollectedMetrics],
+    NewCollectedMetrics = [{MetricTagsBinary, Fields, Timestamping andalso unix_time(Precision)} | CollectedMetrics],
     CollectedCount == 0 andalso prepare_batch_send(BatchWinSize),
     {ok, State#state{collected_count = CollectedCount + 1, collected_metrics = NewCollectedMetrics}}.
 
 -spec send(binary() | list(), state()) ->
     {ok, state()} | {error, term()}.
-send(Packet, #state{protocol = Proto, connection = Connection,
-    precision = Precision, db = DB,
-    timestamping = Timestamping} = State) when ?HTTP(Proto) ->
-    QsVals =
-        case Timestamping of
-            false ->
-                [{<<"db">>, DB}];
-            true ->
-                [{<<"db">>, DB}, {<<"precision">>, Precision}]
-        end,
-    Url = hackney_url:make_url(<<"/">>, <<"write">>, QsVals),
-    Req = {post, Url, [], Packet},
-    case hackney:send_request(Connection, Req) of
+send(Packet, #state{protocol = Proto, connection = Connection, http_url = Url} = State) when ?HTTP(Proto) ->
+    case hackney:send_request(Connection, {post, Url, [], Packet}) of
         {ok, 204, _, Ref} ->
             hackney:body(Ref),
             {ok, State};
@@ -429,22 +417,17 @@ flatten_tags(Tags) ->
             [Acc, ?SEP(Acc), key(K), $=, key(V)]
         end, [], lists:keysort(1, Tags)).
 
--spec make_packet(exometer_report:metric(), map() | list(),
-    map(), boolean() | non_neg_integer(), precision()) ->
+-spec make_packet(binary(), map(), boolean() | non_neg_integer(), precision()) ->
     list().
-make_packet(Measurement, Tags, Fields, Timestamping, Precision) ->
-    BinaryTags = flatten_tags(Tags),
+make_packet(MetricTagsBinary, Fields, Timestamping, Precision) ->
     BinaryFields = flatten_fields(Fields),
     case Timestamping of
         false ->
-            [name(Measurement), ?SEP(BinaryTags), BinaryTags, " ",
-                BinaryFields, " "];
+            [MetricTagsBinary, " ", BinaryFields, " "];
         true ->
-            [name(Measurement), ?SEP(BinaryTags), BinaryTags, " ",
-                BinaryFields, " ", integer_to_binary(unix_time(Precision))];
+            [MetricTagsBinary, " ", BinaryFields, " ", integer_to_binary(unix_time(Precision))];
         Timestamp when is_integer(Timestamp) -> % for batch sending with timestamp
-            [name(Measurement), ?SEP(BinaryTags), BinaryTags, " ",
-                BinaryFields, " ", integer_to_binary(Timestamp)]
+            [MetricTagsBinary, " ", BinaryFields, " ", integer_to_binary(Timestamp)]
     end.
 
 -spec evaluate_timestamp_opt({boolean(), precision()} | boolean())
@@ -545,3 +528,21 @@ evaluate_subscription_formatting({MetricId, Tags, FromNameIndices}, FormattingOp
 evaluate_subscription_series_name({MetricId, Tags}, undefined) -> {MetricId, Tags};
 evaluate_subscription_series_name({_MetricId, Tags}, SeriesName) -> {SeriesName, Tags}.
 
+-spec http_url(Protocol :: protocol(), DB :: binary(),
+    Timestamping :: boolean(), Precision :: precision()) -> Url :: binary().
+http_url(Protocol, DB, Timestamping, Precision) when ?HTTP(Protocol) ->
+    QsVals =
+        case Timestamping of
+            false ->
+                [{<<"db">>, DB}];
+            true ->
+                [{<<"db">>, DB}, {<<"precision">>, Precision}]
+        end,
+    hackney_url:make_url(<<"/">>, <<"write">>, QsVals);
+http_url(_Protocol, _DB, _Timestamping, _Precision) -> <<>>.
+
+-spec metric_tags_binary(Measurement :: exometer_report:metric(), Tags :: map() | list()) ->
+    MetricTagsBinary :: binary().
+metric_tags_binary(Measurement, Tags) ->
+    BinaryTags = flatten_tags(Tags),
+    iolist_to_binary([name(Measurement), ?SEP(BinaryTags), BinaryTags]).

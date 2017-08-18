@@ -3,8 +3,11 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("exometer_core/include/exometer.hrl").
 
--import(exometer_report_influxdb, [evaluate_subscription_options/5,
-                                   make_packet/5]).
+-import(exometer_report_influxdb, [
+    evaluate_subscription_options/5,
+    make_packet/4,
+    metric_tags_binary/2
+]).
 
 
 evaluate_subscription_options(MetricId, Options) ->
@@ -52,69 +55,77 @@ evaluate_subscription_options_test() ->
 
 make_packet_without_timestamping_test() ->
     {Name1, Tags1} = evaluate_subscription_options([a, b, c], []),
+    MetricTagsBinary1 = metric_tags_binary(Name1, Tags1),
     ?assertEqual(<<"a_b_c value=1i ">>,
-                 make_bin_packet(Name1, Tags1, #{value => 1}, false, u)),
+                 make_bin_packet(MetricTagsBinary1, #{value => 1}, false, u)),
 
     {Name2, Tags2} = evaluate_subscription_options([a, b, c], [{tags, [{tag, d}]}]),
+    MetricTagsBinary2 = metric_tags_binary(Name2, Tags2),
     ?assertEqual(<<"a_b_c,tag=d value=1i ">>,
-                 make_bin_packet(Name2, Tags2, #{value => 1}, false, u)),
+                 make_bin_packet(MetricTagsBinary2, #{value => 1}, false, u)),
 
     {Name3, Tags3} = evaluate_subscription_options([a, b, c], [{tags, [{tag, {from_name, 2}}]}]),
+    MetricTagsBinary3 = metric_tags_binary(Name3, Tags3),
     ?assertEqual(<<"a_c,tag=b value=1i ">>,
-                 make_bin_packet(Name3, Tags3, #{value => 1}, false, u)),
+                 make_bin_packet(MetricTagsBinary3, #{value => 1}, false, u)),
 
     {Name4, Tags4} = evaluate_subscription_options([a, b, c], [{tags, [{tag1, d}, {tag2, {from_name, 2}}]}]),
+    MetricTagsBinary4 = metric_tags_binary(Name4, Tags4),
     ?assertEqual(<<"a_c,tag1=d,tag2=b value=1i ">>,
-                 make_bin_packet(Name4, Tags4, #{value => 1}, false, u)),
+                 make_bin_packet(MetricTagsBinary4, #{value => 1}, false, u)),
 
     {Name5, Tags5} = evaluate_subscription_options([a, b, c], [{tags, [{tag, d}]}]),
+    MetricTagsBinary5 = metric_tags_binary(Name5, Tags5),
     ?assertEqual(<<"a_b_c,tag=d value=1i,value2=2i ">>,
-                 make_bin_packet(Name5, Tags5, #{value => 1, value2 => 2}, false, u)),
+                 make_bin_packet(MetricTagsBinary5, #{value => 1, value2 => 2}, false, u)),
 
     {Name6, Tags6} = evaluate_subscription_options([a, b, c], [{tags, [{tag1, d}, {tag2, {from_name, 2}}]}]),
+    MetricTagsBinary6 = metric_tags_binary(Name6, Tags6),
     ?assertEqual(<<"a_c,tag1=d,tag2=b value=1i,value2=2i ">>,
-                 make_bin_packet(Name6, Tags6, #{value => 1, value2 => 2}, false, u)),
+                 make_bin_packet(MetricTagsBinary6, #{value => 1, value2 => 2}, false, u)),
     ok.
 
 make_packet_with_timestamping_test() ->
     {Name1, Tags1} = evaluate_subscription_options([a, b, c], []),
+    MetricTagsBinary1 = metric_tags_binary(Name1, Tags1),
 
     ?assertEqual(<<"a_b_c value=1i 1456993524527361000">>,
-                 make_bin_packet(Name1, Tags1, #{value => 1}, true, n)),
+                 make_bin_packet(MetricTagsBinary1, #{value => 1}, true, n)),
 
     ?assertEqual(<<"a_b_c value=1i 1456993524527361">>,
-                 make_bin_packet(Name1, Tags1, #{value => 1}, true, u)),
+                 make_bin_packet(MetricTagsBinary1, #{value => 1}, true, u)),
 
     ?assertEqual(<<"a_b_c value=1i 1456993524527">>,
-                 make_bin_packet(Name1, Tags1, #{value => 1}, true, ms)),
+                 make_bin_packet(MetricTagsBinary1, #{value => 1}, true, ms)),
 
     ?assertEqual(<<"a_b_c value=1i 1456993525">>,
-                 make_bin_packet(Name1, Tags1, #{value => 1}, true, s)),
+                 make_bin_packet(MetricTagsBinary1, #{value => 1}, true, s)),
 
     ?assertEqual(<<"a_b_c value=1i 24283225">>,
-                 make_bin_packet(Name1, Tags1, #{value => 1}, true, m)),
+                 make_bin_packet(MetricTagsBinary1, #{value => 1}, true, m)),
 
     ?assertEqual(<<"a_b_c value=1i 404720">>,
-                 make_bin_packet(Name1, Tags1, #{value => 1}, true, h)),
+                 make_bin_packet(MetricTagsBinary1, #{value => 1}, true, h)),
     ok.
 
 make_packet_with_integer_timestamping_test() ->
     {Name1, Tags1} = evaluate_subscription_options([a, b, c], []),
+    MetricTagsBinary1 = metric_tags_binary(Name1, Tags1),
 
-    ?assertEqual(<<"a_b_c value=1i 10000">>, 
-                 make_bin_packet(Name1, Tags1, #{value => 1}, 10000, n)),
+    ?assertEqual(<<"a_b_c value=1i 10000">>,
+                 make_bin_packet(MetricTagsBinary1, #{value => 1}, 10000, n)),
 
-    ?assertEqual(<<"a_b_c value=1i 10000">>, 
-                 make_bin_packet(Name1, Tags1, #{value => 1}, 10000, s)),
+    ?assertEqual(<<"a_b_c value=1i 10000">>,
+                 make_bin_packet(MetricTagsBinary1, #{value => 1}, 10000, s)),
 
     ok.
 
 subscribtions_module_test() ->
     {ok, Socket} = gen_udp:open(8089),
-    Subscribers =  [ 
+    Subscribers =  [
         {reporters, [
-            {exometer_report_influxdb, [{autosubscribe, true}, 
-                                        {subscriptions_module, exometer_influxdb_subscribe_mod}, 
+            {exometer_report_influxdb, [{autosubscribe, true},
+                                        {subscriptions_module, exometer_influxdb_subscribe_mod},
                                         {protocol, udp}, {port, 8089}, {tags, [{region, ru}]}]}
         ]}],
     error_logger:tty(false),
@@ -136,5 +147,5 @@ subscribtions_module_test() ->
     gen_udp:close(Socket),
     ok.
 
-make_bin_packet(Name, Tags, Fields, Timestamping, Precision) ->
-    binary:list_to_bin(make_packet(Name, Tags, Fields, Timestamping, Precision)).
+make_bin_packet(MetricTagsBinary, Fields, Timestamping, Precision) ->
+    binary:list_to_bin(make_packet(MetricTagsBinary, Fields, Timestamping, Precision)).
