@@ -8,6 +8,6 @@ subscribe([metric, test], histogram) ->
      {[metric, test], median, 1000, Extra}];
 subscribe([metric, test1], histogram) ->
     Extra = [{tags, [{type, {from_name, 2}}]}],
-    [{[metric, test1], max, 1000, Extra, true},
+    [{[metric, test1], max, 1000, Extra, false},
      {[metric, test1], median, 1000, Extra}];
 subscribe(_, _) -> [].
